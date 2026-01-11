@@ -8,6 +8,7 @@ from sample_efficient_gpt.utils.profiling import nvtx_range
 # -----------------------------------------------------------------------------
 # Muon optimizer
 
+
 class Muon(torch.optim.Optimizer):
     """
     Muon - MomentUm Orthogonalized by Newton-schulz

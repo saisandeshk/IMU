@@ -7,7 +7,7 @@ from sample_efficient_gpt.training.optimizers.muon_triton import newton_schulz_t
 from sample_efficient_gpt.utils.profiling import nvtx_range
 
 # -----------------------------------------------------------------------------
-# NorMuon optimizer
+# NorMuon optimizer with cautious weight decay update
 
 
 def normuon_update(p, v, second_momentum_buffer, eff_lr, eff_weight_decay, beta2):
@@ -22,6 +22,10 @@ def normuon_update(p, v, second_momentum_buffer, eff_lr, eff_weight_decay, beta2
     v_norm_new = v.norm(dim=(-2, -1), keepdim=True).clamp_min(1e-10)
     v.mul_(v_norm / v_norm_new)
     ####################################
+
+    # Cautious weight decay update
+    cautious_mask = torch.eq(torch.signbit(v), torch.signbit(p))
+    p.addcmul_(p, cautious_mask.to(p.dtype), value=-eff_weight_decay)
 
     p.add_(other=v, alpha=-eff_lr)
     return v_norm.squeeze()
@@ -104,7 +108,6 @@ class Muon(torch.optim.Optimizer):
                 v = newton_schulz_triton(grad.bfloat16()).to(torch.float32)
 
                 v_norm = normuon_update(p, v, second_momentum_buffer, eff_lr, eff_weight_decay, beta2)
-                # v_norm = normuon_triton_update(p, v, second_momentum_buffer, eff_lr, eff_weight_decay, beta2)
                 update_rms.add_(v_norm * v_norm)
                 n += 1
         return update_rms.sqrt() / (n + 1e-10)

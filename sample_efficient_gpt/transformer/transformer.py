@@ -5,33 +5,11 @@ from torch.utils.checkpoint import checkpoint
 from jaxtyping import Float, Int
 from tqdm.auto import tqdm
 
-import torch.distributed as dist
-
 from sample_efficient_gpt.transformer.core import SwiGLU, RMSNorm, Embedding, Linear, softmax
 from sample_efficient_gpt.transformer.attention import MultiHeadSelfAttention, KVCache
 from sample_efficient_gpt.utils.profiling import nvtx_range
 
 _MAX_SEQ_LEN = 8192
-
-
-class CheckpointBlock(nn.Module):
-    def __init__(self, block: nn.Module):
-        super().__init__()
-        self.block = block
-
-    def forward(self, x, *args, **kwargs):
-        def _forward(*inputs):
-            # re-pack if your block takes more than just x
-            return self.block(*inputs, **kwargs)
-
-        return checkpoint(_forward, x, *args)
-
-
-def apply_checkpointing_to_last_n_layers(model, n_last: int):
-    layers = model.transformer.blocks  # adapt to your naming
-    L = len(layers)
-    for i in range(L - n_last, L):
-        layers[i] = CheckpointBlock(layers[i])
 
 
 class Block(nn.Module):

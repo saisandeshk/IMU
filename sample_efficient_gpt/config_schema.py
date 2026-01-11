@@ -30,6 +30,8 @@ class OptimConfig:
     muon_lr: float | None = None
     muon_wd: float | None = None
     muon_wd_min: float | None = None
+    muon_enable_normuon: bool = True
+    normuon_cautious_wd: bool = True
     # for model surgery, run with 0 lr for some time
     zero_lr_steps: int = 0
     warmup_steps: int = 1000
@@ -54,6 +56,7 @@ class ModelConfig:
     attn_val_residual: bool = False
     attn_gating: bool = False
     layernorm_scaling: bool = False
+    num_grad_checkpoint_layers: int = 0
 
 
 @dataclass(frozen=False)

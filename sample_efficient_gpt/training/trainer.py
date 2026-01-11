@@ -22,6 +22,8 @@ from sample_efficient_gpt.training import (
     MemoryMappedDataset,
     AdamW,
     Muon,
+    NorMuon,
+    NorMuonCWD,
     get_cosine_lr,
     get_wsd_lr,
     get_seesaw_lr,
@@ -106,6 +108,7 @@ class Trainer:
             attn_gating=self.cfg.model.attn_gating,
             layernorm_scaling=self.cfg.model.layernorm_scaling,
             theta=self.cfg.model.theta,
+            num_grad_checkpoint_layers=self.cfg.model.num_grad_checkpoint_layers,
             device="cpu",
             # always keep master weights in fp32
             dtype=torch.float32,
@@ -299,7 +302,13 @@ class Trainer:
                 weight_decay=muon_wd,
             )
 
-            self.optimizer2 = Muon(two_d_params, **two_d_optimizer_kwargs)
+            if self.cfg.optim.muon_enable_normuon:
+                if self.cfg.optim.normuon_cautious_wd:
+                    self.optimizer2 = NorMuonCWD(two_d_params, **two_d_optimizer_kwargs)
+                else:
+                    self.optimizer2 = NorMuon(two_d_params, **two_d_optimizer_kwargs)
+            else:
+                self.optimizer2 = Muon(two_d_params, **two_d_optimizer_kwargs)
             self.optimizers = [self.optimizer1, self.optimizer2]
         else:
             one_d_params = self.model.parameters()
