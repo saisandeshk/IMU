@@ -17,7 +17,7 @@ def parse_args():
 
 
 # EMA decay: ema = decay * ema + (1 - decay) * param
-EMA_DECAY = 0.9  # pretty low value, 0.9 corresponds to 50k steps window with 23 checkpoints
+EMA_DECAY = 0.8  # pretty low value, 0.9 corresponds to 50k steps window with 23 checkpoints
 EMA_SUFFIX = "_ema"  # pretty low value, 0.9 corresponds to 50k steps window with 23 checkpoints
 # EMA_DECAY = 0.95  # pretty low value, 0.9 corresponds to 50k steps window with 23 checkpoints
 # EMA_SUFFIX = "_ema95"
@@ -118,8 +118,8 @@ def merge_two_ckpts(ckpt1_path, ckpt2_path, out_path):
 
 
 def ema_iter(checkpoint_dirs):
-    # 1) Get all non-EMA checkpoints sorted by iteration
-    ckpts = list_normal_checkpoints(checkpoint_dirs)
+    # 1) Get all non-EMA checkpoints sorted by iteration, last 6
+    ckpts = list_normal_checkpoints(checkpoint_dirs)[-6:]
     if not ckpts:
         print("No non-EMA checkpoints found.")
         return

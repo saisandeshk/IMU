@@ -259,6 +259,8 @@ class Trainer:
             betas=self.cfg.optim.betas,
             weight_decay=self.cfg.optim.wd,
         )
+        one_d_optimizer_kwargs = optimizer_kwargs
+
         if self.cfg.optim.use_lion:
             optimizer_cls = Lion
         else:
@@ -281,9 +283,7 @@ class Trainer:
                 if p.ndim >= 2 and "embedding" not in n and "lm_head" not in n
             ]
 
-            one_d_optimizer_kwargs = optimizer_kwargs
             self.optimizer1 = optimizer_cls(one_d_params, **one_d_optimizer_kwargs)
-
             if self.cfg.optim.muon_lr is None:
                 muon_lr = self.cfg.optim.lr
             else:
@@ -302,6 +302,7 @@ class Trainer:
             self.optimizer2 = Muon(two_d_params, **two_d_optimizer_kwargs)
             self.optimizers = [self.optimizer1, self.optimizer2]
         else:
+            one_d_params = self.model.parameters()
             self.optimizer = optimizer_cls(one_d_params, **one_d_optimizer_kwargs)
             self.optimizers = [self.optimizer]
 
