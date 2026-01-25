@@ -198,9 +198,10 @@ def _rename_key(name: str, layer_idx: int | None) -> str:
 
 def _convert_state_dict(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     new_state_dict: dict[str, torch.Tensor] = {}
-    has_linear_head = "lm_head.linear.weight" in state_dict
+    has_tied_head = "lm_head.weight" in state_dict
     for name, tensor in state_dict.items():
-        if name == "lm_head.weight" and has_linear_head:
+        # Skip lm_head.weight (unused tied weight) - we use lm_head.linear.weight instead
+        if name == "lm_head.weight":
             continue
         if name.startswith("blocks."):
             parts = name.split(".")
@@ -246,6 +247,9 @@ def _reverse_convert_state_dict(
                 reverse_sd[f"{prefix}.ffn.up.linear.weight"] = tensor
             elif suffix.startswith("mlp.down_proj.weight"):
                 reverse_sd[f"{prefix}.ffn.down.linear.weight"] = tensor
+            elif suffix.startswith("input_layernorm.position_scale") or suffix.startswith("post_attention_layernorm.position_scale"):
+                # Skip position_scale buffers - they're computed in __init__ of native model
+                pass
             else:
                 raise KeyError(f"Unhandled converted key: {name}")
         elif name == "model.embed_tokens.weight":
@@ -255,6 +259,12 @@ def _reverse_convert_state_dict(
         elif name == "lm_head.weight":
             reverse_sd["lm_head.linear.weight"] = tensor
             reverse_sd["lm_head.weight"] = tensor
+        elif name == "model.norm.position_scale":
+            # Skip position_scale buffer - computed in __init__
+            pass
+        elif name == "model.rotary_emb.cos_cached" or name == "model.rotary_emb.sin_cached":
+            # Skip RoPE cached buffers - they're persistent now but not in native model
+            pass
         else:
             raise KeyError(f"Unhandled converted key: {name}")
     if "embedding.weight" in reverse_sd and "lm_head.weight" in reverse_sd:
@@ -327,9 +337,39 @@ def main():
 
     converted_sd = _convert_state_dict(state_dict)
 
+    # Add position_scale buffers for layernorm_scaling
+    if cfg_dict.get("model", {}).get("layernorm_scaling", False):
+        n_layers = cfg_dict["model"]["n_layers"]
+        for layer_idx in range(n_layers):
+            position_scale = (float(layer_idx + 1)) ** -0.5
+            converted_sd[f"model.layers.{layer_idx}.input_layernorm.position_scale"] = torch.tensor(position_scale, dtype=torch.float32)
+            converted_sd[f"model.layers.{layer_idx}.post_attention_layernorm.position_scale"] = torch.tensor(position_scale, dtype=torch.float32)
+        # Final norm has position_scale = 1.0
+        converted_sd["model.norm.position_scale"] = torch.tensor(1.0, dtype=torch.float32)
+
+    # Add RoPE cached buffers (now persistent to work around transformers loading bug)
+    model_cfg = cfg_dict["model"]
+    data_cfg = cfg_dict.get("data", {})
+    hidden_size = model_cfg["d_model"]
+    num_heads = model_cfg["n_heads"]
+    head_dim = hidden_size // num_heads
+    max_pos = max(8192, data_cfg.get("context_length", 0), model_cfg.get("max_seq_len", 0))
+    rope_theta = model_cfg.get("theta", 10000)
+
+    # Build RoPE cache
+    positions = torch.arange(max_pos, dtype=torch.float32)
+    dim = torch.arange(0, head_dim // 2, dtype=torch.float32)
+    freq = torch.outer(positions, rope_theta ** (-2 * dim / head_dim))
+    cos_cached = freq.cos()
+    sin_cached = freq.sin()
+
+    converted_sd["model.rotary_emb.cos_cached"] = cos_cached
+    converted_sd["model.rotary_emb.sin_cached"] = sin_cached
+
     tie_override: bool | None = None
     if cfg_dict.get("model", {}).get("weight_tying", False):
         emb = state_dict.get("embedding.weight")
+        # Check lm_head.linear.weight (the actual weight used by the model)
         head = state_dict.get("lm_head.linear.weight")
         if emb is not None and head is not None and not torch.equal(emb, head):
             tie_override = False

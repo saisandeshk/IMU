@@ -136,19 +136,18 @@ def get_model(checkpoint, device, tokenizer_path: str = "thepowerfuldeez/imu_1_b
     return model, tokenizer, run_id, project, iteration
 
 
-def get_model_hf(checkpoint="HuggingFaceTB/SmolLM2-360M", device="cuda"):
+def get_model_hf(checkpoint="HuggingFaceTB/SmolLM2-360M", device="cuda", tokenizer_path=None):
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
     model = AutoModelForCausalLM.from_pretrained(
         checkpoint,
-        device_map="cuda",
-        dtype=torch.bfloat16,
-        trust_remote_code=True,
-        # local_files_only=True,
-        # use_safetensors=False,
-        attn_implementation="flash_attention_2",
+        torch_dtype=torch.bfloat16,
+        local_files_only=True,
+        use_safetensors=True,
     ).to(device)
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+
+    # Use custom tokenizer path if provided, otherwise load from checkpoint
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path if tokenizer_path else checkpoint)
     return model, tokenizer, "", "", 0
 
 
@@ -163,7 +162,7 @@ def main():
     args = parse_args()
 
     if args.type == "hf":
-        model, tokenizer, run_id, project, iteration = get_model_hf(args.checkpoint, device)
+        model, tokenizer, run_id, project, iteration = get_model_hf(args.checkpoint, device, tokenizer_path=args.tokenizer_path)
         model_slug = args.checkpoint.replace("/", "_").lower()
     else:
         if args.tokenizer_path:

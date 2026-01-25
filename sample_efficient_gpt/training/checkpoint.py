@@ -57,8 +57,29 @@ def load_optimizer(fpath: Path, cfg: Config, model, optimizers: list[Optimizer] 
             print("no optimizers detected in the checkpoint, skipping...")
             return
         # for muon we load 2 optimizers
-        for opt, opt_sd in zip(optimizers, checkpoint["optimizer"]):
-            for (k1, v1), (k2, v2) in zip(opt.state_dict()["state"], opt_sd["state"]):
+        for opt_idx, (opt, opt_sd) in enumerate(zip(optimizers, checkpoint["optimizer"])):
+            # Check if param_groups have compatible sizes
+            current_groups = opt.state_dict()["param_groups"]
+            saved_groups = opt_sd["param_groups"]
+            if len(current_groups) != len(saved_groups):
+                print(
+                    f"optimizer {opt_idx}: param_groups count mismatch ({len(current_groups)} vs {len(saved_groups)}), skipping optimizer load..."
+                )
+                continue
+            groups_compatible = True
+            for g_idx, (cg, sg) in enumerate(zip(current_groups, saved_groups)):
+                if len(cg["params"]) != len(sg["params"]):
+                    print(
+                        f"optimizer {opt_idx} group {g_idx}: params count mismatch ({len(cg['params'])} vs {len(sg['params'])}), skipping optimizer load..."
+                    )
+                    groups_compatible = False
+                    break
+            if not groups_compatible:
+                continue
+            # Validate state shapes
+            current_state = opt.state_dict()["state"]
+            saved_state = opt_sd["state"]
+            for (k1, v1), (k2, v2) in zip(current_state.items(), saved_state.items()):
                 assert k1 == k2 and v1.shape == v2.shape, f"{k1} != {k2} or {v1.shape=}!={v2.shape=}"
             opt.load_state_dict(opt_sd)
             for p, state in opt.state.items():  # keys are parameter tensors
